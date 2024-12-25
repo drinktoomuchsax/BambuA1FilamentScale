@@ -120,16 +120,32 @@ def handle_calibration_step(target_value):
     calib_records.append((total, target_value))
     print(f"Calibrating: Recorded Sum={total} for Target={target_value}")
 
-    # 使用两个校准点计算scale和offset
-    if len(calib_records) == 2:
-        (sum1, target1), (sum2, target2) = calib_records
-        if target1 != target2:
-            scale = (sum1 - sum2) / (target1 - target2)
-            offset = sum2 - scale * target2
+    # 当收集到三个校准点时，进行线性回归计算
+    if len(calib_records) == 3:
+        # 提取目标值和读取值
+        x = [record[1] for record in calib_records]  # 目标值
+        y = [record[0] for record in calib_records]  # 读取总和
+
+        # 计算线性回归参数
+        n = 3
+        sum_x = sum(x)
+        sum_y = sum(y)
+        sum_xy = sum(xi * yi for xi, yi in zip(x, y))
+        sum_x2 = sum(xi ** 2 for xi in x)
+
+        denominator = n * sum_x2 - sum_x ** 2
+        if denominator != 0:
+            scale = (n * sum_xy - sum_x * sum_y) / denominator
+            offset = (sum_y - scale * sum_x) / n
             save_calibration(offset, scale)
-            print(f"Calibration saved: Offset={offset}, Scale={scale}")
+            print(f"Calibration completed via linear regression:")
+            print(f"  Offset = {offset}")
+            print(f"  Scale = {scale}")
         else:
-            print("Error: Calibration targets are the same. Cannot compute scale.")
+            print("Error: Denominator for linear regression is zero. Calibration not updated.")
+
+        # 清空校准记录以便下次校准
+        calib_records = []
 
 def get_calibrated_value(sum_total):
     return (sum_total - offset) / scale
@@ -174,20 +190,15 @@ while True:
                 gpio12.value(0)
                 gpio13.value(1)
                 print("Entered calibration state")
-            elif state == STATE_CALIB_STEP_1000:
-                handle_calibration_step(calib_steps[STATE_CALIB_STEP_1000])
-                print("Calibration Step 1 completed: Set to 1000")
-            elif state == STATE_CALIB_STEP_0:
-                handle_calibration_step(calib_steps[STATE_CALIB_STEP_0])
-                print("Calibration Step 2 completed: Set to 0")
-            elif state == STATE_CALIB_STEP_MINUS100:
-                handle_calibration_step(calib_steps[STATE_CALIB_STEP_MINUS100])
-                print("Calibration Step 3 completed: Set to -100")
-                print("Calibration complete. Returning to default state.")
-                state = STATE_DEFAULT
-                gpio12.value(1)
-                gpio13.value(0)
-                calib_records = []  # 清空校准记录
+            elif state in calib_steps:
+                handle_calibration_step(calib_steps[state])
+                print(f"Calibration Step {calib_steps[state]} completed")
+                if state == STATE_CALIB_STEP_MINUS100:
+                    print("Calibration complete. Returning to default state.")
+                    state = STATE_DEFAULT
+                    gpio12.value(1)
+                    gpio13.value(0)
+                    calib_records = []  # 清空校准记录
 
             # 等待按键释放
             while not button.value():
