@@ -2,11 +2,12 @@ import sys
 import serial
 import serial.tools.list_ports
 import time
+import csv
 from collections import deque
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
-    QPushButton, QComboBox, QMessageBox
+    QPushButton, QComboBox, QMessageBox, QFileDialog
 )
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer
 import pyqtgraph as pg
@@ -71,15 +72,23 @@ class WeightMonitor(QWidget):
         self.time_data = deque(maxlen=6000)
         self.start_time = time.time()
         self.last_time = self.start_time
-        self.interval_times = deque(maxlen=100)  # 用于计算采样频率
+        self.interval_times = deque(maxlen=100)  # 用于计算读取频率
 
         # 串口线程
         self.serial_thread = None
 
-        # 定时器用于更新采样频率
+        # 读取频率与采样频率参数
+        self.samples_per_read = 10  # 每次读取的样本数，基于微控制器的read_average(times=10)
+
+        # 定时器用于更新读取频率和采样频率
         self.freq_timer = QTimer()
-        self.freq_timer.timeout.connect(self.update_frequency)
-        self.freq_timer.start(1000)  # 每秒更新一次采样频率
+        self.freq_timer.timeout.connect(self.update_frequencies)
+        self.freq_timer.start(1000)  # 每秒更新一次频率
+
+        # 初始化CSV记录
+        self.csv_file = None
+        self.csv_writer = None
+        self.init_csv()
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -100,12 +109,14 @@ class WeightMonitor(QWidget):
 
         layout.addLayout(port_layout)
 
-        # 显示当前重量和采样频率
+        # 显示当前重量和频率
         display_layout = QHBoxLayout()
         self.weight_label = QLabel("当前重量: -- g")
-        self.freq_label = QLabel("采样频率: -- Hz")
+        self.read_freq_label = QLabel("读取频率: -- 次/秒")
+        self.sampling_freq_label = QLabel("采样频率: -- Hz")
         display_layout.addWidget(self.weight_label)
-        display_layout.addWidget(self.freq_label)
+        display_layout.addWidget(self.read_freq_label)
+        display_layout.addWidget(self.sampling_freq_label)
         layout.addLayout(display_layout)
 
         # 绘图区域
@@ -130,6 +141,7 @@ class WeightMonitor(QWidget):
             self.serial_thread = None
             self.connect_button.setText("连接")
             QMessageBox.information(self, "信息", "已断开串口连接。")
+            self.close_csv()
         else:
             # 连接串口
             selected_port = self.port_combo.currentText()
@@ -141,6 +153,7 @@ class WeightMonitor(QWidget):
             self.serial_thread.start()
             self.connect_button.setText("断开")
             QMessageBox.information(self, "信息", f"已连接到串口 {selected_port}。")
+            self.init_csv()  # 初始化CSV记录
 
     def handle_data(self, weight):
         current_time = time.time()
@@ -157,6 +170,9 @@ class WeightMonitor(QWidget):
         # 更新绘图
         self.update_plot()
 
+        # 写入CSV
+        self.write_csv(current_time, weight)
+
     def update_plot(self):
         if not self.time_data:
             return
@@ -165,20 +181,62 @@ class WeightMonitor(QWidget):
         self.plot_curve.setData(times, weights)
         self.plot_widget.enableAutoRange()
 
-    def update_frequency(self):
+    def update_frequencies(self):
+        # 计算读取频率
         if not self.interval_times:
-            self.freq_label.setText("采样频率: -- Hz")
+            self.read_freq_label.setText("读取频率: -- 次/秒")
+            self.sampling_freq_label.setText("采样频率: -- Hz")
             return
         avg_interval = sum(self.interval_times) / len(self.interval_times)
         if avg_interval > 0:
-            frequency = 1.0 / avg_interval
-            self.freq_label.setText(f"采样频率: {frequency:.2f} Hz")
+            read_freq = 1.0 / avg_interval
+            self.read_freq_label.setText(f"读取频率: {read_freq:.2f} 次/秒")
+            # 计算采样频率
+            sampling_freq = read_freq * self.samples_per_read
+            self.sampling_freq_label.setText(f"采样频率: {sampling_freq:.2f} Hz")
         else:
-            self.freq_label.setText("采样频率: -- Hz")
+            self.read_freq_label.setText("读取频率: -- 次/秒")
+            self.sampling_freq_label.setText("采样频率: -- Hz")
+
+    def init_csv(self):
+        if self.csv_file is not None:
+            return  # 已经初始化
+        # 选择保存CSV的位置
+        options = QFileDialog.Options()
+        options |= QFileDialog.DontUseNativeDialog
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "保存CSV文件", "", "CSV Files (*.csv);;All Files (*)", options=options)
+        if file_path:
+            try:
+                self.csv_file = open(file_path, 'w', newline='', encoding='utf-8')
+                self.csv_writer = csv.writer(self.csv_file)
+                self.csv_writer.writerow(['Timestamp', 'Weight(g)'])
+                print(f"CSV记录已初始化，文件: {file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"无法创建CSV文件: {e}")
+                self.csv_file = None
+                self.csv_writer = None
+        else:
+            QMessageBox.warning(self, "警告", "未选择CSV文件，将不会记录数据。")
+
+    def write_csv(self, timestamp, weight):
+        if self.csv_writer:
+            # 格式化时间为可读格式
+            time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
+            self.csv_writer.writerow([time_str, f"{weight:.2f}"])
+            self.csv_file.flush()  # 确保数据写入文件
+
+    def close_csv(self):
+        if self.csv_file:
+            self.csv_file.close()
+            print("CSV记录已关闭。")
+            self.csv_file = None
+            self.csv_writer = None
 
     def closeEvent(self, event):
         if self.serial_thread and self.serial_thread.isRunning():
             self.serial_thread.stop()
+        self.close_csv()
         event.accept()
 
 
