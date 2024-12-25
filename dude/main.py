@@ -64,8 +64,8 @@ def save_calibration(offset, scale):
         json.dump(data, f)
 
 # 初始化HX711实例
-hx1 = HX711(data_pin=2, clock_pin=3)
-hx2 = HX711(data_pin=6, clock_pin=7)
+hx1 = HX711(data_pin=1, clock_pin=2)
+hx2 = HX711(data_pin=8, clock_pin=9)
 
 # 加载校准数据
 offset, scale = load_calibration()

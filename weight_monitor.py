@@ -79,7 +79,7 @@ class WeightMonitor(QWidget):
         self.serial_thread = None
 
         # 读取频率与采样频率参数
-        self.samples_per_read = 10  # 每次读取的样本数，基于微控制器的read_average(times=10)
+        self.samples_per_read = 100  # 每次读取的样本数，基于微控制器的read_average(times=10)
 
         # 定时器用于更新读取频率和采样频率
         self.freq_timer = QTimer()
