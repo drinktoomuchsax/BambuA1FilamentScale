@@ -16,7 +16,7 @@ import pyqtgraph as pg
 class SerialReader(QThread):
     data_received = pyqtSignal(float)
 
-    def __init__(self, port, baudrate=9600):
+    def __init__(self, port, baudrate=115200):
         super().__init__()
         self.port = port
         self.baudrate = baudrate
@@ -34,8 +34,9 @@ class SerialReader(QThread):
         while self.running:
             try:
                 if self.ser.in_waiting:
-                    line = self.ser.readline().decode('utf-8').strip()
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
                     # 假设每行数据格式为 "Weight: 123.45"
+                    print(f"Received line: {line}")
                     if line.startswith("Weight:"):
                         try:
                             weight_str = line.split(":")[1].strip()

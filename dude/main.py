@@ -94,9 +94,9 @@ debounce_time = 200  # 毫秒
 
 # 标定目标值
 calib_steps = {
-    STATE_CALIB_STEP_1000: 1000,
+    STATE_CALIB_STEP_1000: 923,
     STATE_CALIB_STEP_0: 0,
-    STATE_CALIB_STEP_MINUS100: -100
+    STATE_CALIB_STEP_MINUS100: -173
 }
 
 # Blink控制参数
